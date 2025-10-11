@@ -31,7 +31,7 @@ This project ties together a few projects to make Faster Whisper work with an AM
 - [Faster Whisper](https://pypi.org/project/faster-whisper/)
 - [ROCm/Pytorch](https://hub.docker.com/r/rocm/pytorch)
 	- Build Requires Python 3.9, the project makes use of the 20.04 image.
-- [CTranslate2-rocm](https://github.com/arlo-phoenix/CTranslate2-rocm)
+- [CTranslate2-rocm](https://github.com/pigeek/CTranslate2-rocm)
 	- This project is essential to running Faster Whisper as the standard CTranslate2 Library does not support ROCm natively. 
 	- This project needs to be built to the GPU architecture specific to your hardware.
 
@@ -47,61 +47,33 @@ git clone https://github.com/Donkey545/wyoming-faster-whisper-rocm.git
 cd wyoming-faster-whisper-rocm/
 ```
 
-2. Modify the `docker-compose.yml` to reflect your GPU architecture
-	1. Get your architecture:
+2. Optional: export the GPU architecture you want CTranslate2 to target. The image already builds support for several common targets (`gfx900`, `gfx902`, `gfx906`, `gfx908`, `gfx90a`, `gfx1010`, `gfx1030`, `gfx1100`, `gfx1101`, `gfx1102`, `gfx1151`), but setting this keeps build times down and ensures your exact arch is present.
 
 ```bash
-rocminfo |grep " gfx"
-...
-# The Response should look something like:
-#  Name:                    gfx90c
+rocminfo | grep " gfx"   # find your architecture, e.g., gfx90c
+export AMDGPU_TARGETS=gfx90c
 ```
-	2. Modify the environment section
 
-```yaml
-version: "3"
-
-services:
-  whisper:
-    container_name: faster-whisper-rocm
-    restart: unless-stopped
-    build:
-      context: .
-    volumes:
-      - ./data:/data
-    ports:
-      - "10300:10300"
-    devices:
-      - "/dev/dri"
-      - "/dev/kfd"
-    environment:
-      - HSA_OVERRIDE_GFX_VERSION=9.0.0 #This line can be removed if newer than VEGA
-```
 3. Run Docker Compose
 ``` bash
 docker compose up -d --build
 ```
 At this point you can configure the Whisper service with Wyoming in home assistant with the `<dockerhost_ip_address>:10300`.
 
+### Useful Environment Variables
+
+- During build you can set `AMDGPU_TARGETS` (for example `export AMDGPU_TARGETS=gfx1100` before running compose) so CTranslate2 compiles specifically for your GPU.
+- At runtime the container entrypoint reads several optional variables:
+  - `WYOMING_MODEL` (default `distil-small.en`)
+  - `WYOMING_DEVICE` (default `cuda`)
+  - `WYOMING_COMPUTE_TYPE` (default `default`)
+  - `WYOMING_DATA_DIRS` (colon separated list, default `/data`)
+  - `WYOMING_DOWNLOAD_DIR` (defaults to the first data dir)
+  - `WYOMING_LANGUAGE`, `WYOMING_BEAM_SIZE`, `WYOMING_INITIAL_PROMPT`, `WYOMING_EXTRA_ARGS`
+
 ### Optional Manual Build
-In the docker file, comment out the build script line, and chand the entrypoint command to `#ENTRYPOINT ["tail", "-f", "/dev/null"]`. Exporting the Pytorch ROCm Arch as an environment variable will restrict the scope of the build to your specific architecture. This caused some problems for me on my APU, so the support may vary.  Refer to the instruction on the ROCm Installation for [CTranslate2-rocm](https://github.com/arlo-phoenix/CTranslate2-rocm). 
-
-3o. Run Docker Compose and Open an Interactive Terminal
-``` bash
-docker compose up -d --build
-...
-docker exec -it faster-whisper-rocm  bash
+The container now builds CTranslate2 automatically. You can still shell into the container if you need to experiment:
+```bash
+docker compose exec whisper bash
 ```
-
-4o. Run the build script. This will take several minutes as it is building all of the graphic architecture versions. You can scope this down with an optional environment variable.
-``` bash
-#export PYTORCH_ROCM_ARCH=gfx1030 #optional
-./src/build.sh
-```
-5o. Start the service:
-``` bash
-./run.sh
-# you can send this to background and run detached to have it operate as normal now.
-# nohup run.sh  &
-
-```
+From there you can run `python -m wyoming_whisper --help` to view live CLI options.

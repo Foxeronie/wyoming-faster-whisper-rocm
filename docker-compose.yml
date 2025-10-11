@@ -1,11 +1,11 @@
-version: "3"
-
 services:
   whisper:
     container_name: faster-whisper-rocm
     restart: unless-stopped
     build:
       context: .
+      args:
+        AMDGPU_TARGETS: ${AMDGPU_TARGETS:-}
     image: wyoming-faster-whisper-rocm
     volumes:
       - ./data:/data
@@ -15,4 +15,6 @@ services:
       - "/dev/dri"
       - "/dev/kfd"
     environment:
-      - HSA_OVERRIDE_GFX_VERSION=9.0.0
+      WYOMING_DATA_DIRS: /data
+      WYOMING_MODEL: medium
+      WYOMING_COMPUTE_TYPE: int8

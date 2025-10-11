@@ -1,134 +1,63 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-### Some Decoration
-RCol='\e[0m'    # Text Reset
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="${CTRANSLATE2_SRC_DIR:-/opt/build/CTranslate2}"
+BUILD_DIR="${CTRANSLATE2_BUILD_DIR:-${SRC_DIR}/build}"
+INSTALL_PREFIX="${CTRANSLATE2_INSTALL_PREFIX:-/usr/local}"
+HIP_ARCH_LIST="${AMDGPU_TARGETS:-gfx900;gfx902;gfx906;gfx908;gfx90a;gfx1010;gfx1030;gfx1100;gfx1101;gfx1102;gfx1151}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-# Regular           Bold                Underline           High Intensity      BoldHigh Intens     Background          High Intensity Backgrounds
-Bla='\e[0;30m';     BBla='\e[1;30m';    UBla='\e[4;30m';    IBla='\e[0;90m';    BIBla='\e[1;90m';   On_Bla='\e[40m';    On_IBla='\e[0;100m';
-Red='\e[0;31m';     BRed='\e[1;31m';    URed='\e[4;31m';    IRed='\e[0;91m';    BIRed='\e[1;91m';   On_Red='\e[41m';    On_IRed='\e[0;101m';
-Gre='\e[0;32m';     BGre='\e[1;32m';    UGre='\e[4;32m';    IGre='\e[0;92m';    BIGre='\e[1;92m';   On_Gre='\e[42m';    On_IGre='\e[0;102m';
-Yel='\e[0;33m';     BYel='\e[1;33m';    UYel='\e[4;33m';    IYel='\e[0;93m';    BIYel='\e[1;93m';   On_Yel='\e[43m';    On_IYel='\e[0;103m';
-Blu='\e[0;34m';     BBlu='\e[1;34m';    UBlu='\e[4;34m';    IBlu='\e[0;94m';    BIBlu='\e[1;94m';   On_Blu='\e[44m';    On_IBlu='\e[0;104m';
-Pur='\e[0;35m';     BPur='\e[1;35m';    UPur='\e[4;35m';    IPur='\e[0;95m';    BIPur='\e[1;95m';   On_Pur='\e[45m';    On_IPur='\e[0;105m';
-Cya='\e[0;36m';     BCya='\e[1;36m';    UCya='\e[4;36m';    ICya='\e[0;96m';    BICya='\e[1;96m';   On_Cya='\e[46m';    On_ICya='\e[0;106m';
-Whi='\e[0;37m';     BWhi='\e[1;37m';    UWhi='\e[4;37m';    IWhi='\e[0;97m';    BIWhi='\e[1;97m';   On_Whi='\e[47m';    On_IWhi='\e[0;107m';
+for tool in git cmake hipconfig "${PYTHON_BIN}"; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    echo "Required tool '${tool}' is not available in PATH." >&2
+    exit 1
+  fi
+done
 
-echo -e "${Gre} -----------------------------------------------------------------"
-echo -e "${On_Gre} Starting Build Process for CTranslate2- ROCm${RCol}"
-echo -e "${On_Gre} - Note: "
-echo -e "${On_Gre}    - Architecture: $PYTORCH_ROCM_ARCH"
-echo -e "${On_Gre}    - HSA_OVERRIDE_GFX_VERSION: $HSA_OVERRIDE_GFX_VERSION ${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
+if [ ! -d "${SRC_DIR}" ]; then
+  echo "CTranslate2 sources not found at ${SRC_DIR}. Set CTRANSLATE2_SRC_DIR or clone before running build.sh." >&2
+  exit 1
+fi
 
-cd CTranslate2-rocm
+echo "==> Configuring build"
+LLVM_BIN="$(hipconfig -l)"
+HIP_ROOT="$(hipconfig -R)"
+JOBS="$(command -v nproc >/dev/null 2>&1 && nproc || echo 1)"
 
-echo -e "${Gre} -----------------------------------------------------------------${RCol}"
-echo -e "${On_Gre} 1. Setting Up Conda Environment Skipped.${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
+cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
+  -DWITH_MKL=OFF \
+  -DWITH_HIP=ON \
+  -DBUILD_TESTS=OFF \
+  -DWITH_CUDNN=ON \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" \
+  -DCMAKE_PREFIX_PATH="${ROCM_PATH:-/opt/rocm}" \
+  -DCMAKE_HIP_ARCHITECTURES="${HIP_ARCH_LIST}" \
+  -DCMAKE_HIP_COMPILER_FLAGS="--amdgpu-target=${HIP_ARCH_LIST//;/ --amdgpu-target=}" \
+  -DCMAKE_C_COMPILER="${LLVM_BIN}/amdclang" \
+  -DCMAKE_CXX_COMPILER="${LLVM_BIN}/amdclang++" \
+  -DCMAKE_HIP_COMPILER="${LLVM_BIN}/amdclang" \
+  -DHIP_ROOT_DIR="${HIP_ROOT}"
 
-# # Initialize conda
-# conda init bash
+echo "==> Building CTranslate2"
+cmake --build "${BUILD_DIR}" --parallel "${JOBS}"
 
-# # Activate the conda environment
-# source activate py_3.9
+echo "==> Installing CTranslate2 to ${INSTALL_PREFIX}"
+cmake --install "${BUILD_DIR}" --prefix "${INSTALL_PREFIX}"
 
-echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-echo -e "${On_Gre} 2.  Running CMake with Architecture Spec'd${RCol}"
-#echo -e "${On_Gre} - Note: "
-#echo -e "${On_Gre}    - DCMAKE_HIP_ARCHITECTURES: $PYTORCH_ROCM_ARCH ${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
+if command -v ldconfig >/dev/null 2>&1; then
+  echo "==> Refreshing shared library cache"
+  ldconfig
+fi
 
-# Run cmake with specified options
-CLANG_CMAKE_CXX_COMPILER=clang++ CXX=clang++ HIPCXX="$(hipconfig -l)/clang" HIP_PATH="$(hipconfig -R)" \
-cmake -S . -B build -DWITH_MKL=OFF -DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=$PYTORCH_ROCM_ARCH -DBUILD_TESTS=ON -DWITH_CUDNN=ON
+echo "==> Building Python wheel"
+${PYTHON_BIN} -m pip install -U pip setuptools wheel pybind11
+${PYTHON_BIN} -m pip install -r "${SRC_DIR}/python/install_requirements.txt"
+(
+  cd "${SRC_DIR}/python"
+  ${PYTHON_BIN} setup.py bdist_wheel
+  ${PYTHON_BIN} -m pip install dist/ctranslate2-*.whl
+)
 
-# Build the project with 16 parallel jobs
-cmake --build build -- -j16
-
-# Change to the build directory
-cd build
-
-echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-echo -e "${On_Gre} 3.  Installing the CMake Build${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-
-# Install the build with conda or system-wide
-cmake --install . #--prefix $CONDA_PREFIX # use this line if using conda
-sudo make install
-
-echo -e "${Gre} -----------------------------------------------------------------${RCol}"
-echo -e "${On_Gre} 4.  Linking with ldconfig${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-
-# Update shared library cache
-sudo ldconfig
-
-
-
-
-echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-echo -e "${On_Gre} Python Package Assembly Omitted ${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-# Change to the python directory
-# cd ../python
-
-# # everything is functioning up to here, but then the python package build fails
-# # possibly build it in conda then install it outside of conda?
-
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}"
-# echo -e "${On_Gre} 5. Setting Up Conda Environment.${RCol}"
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-
-# # Initialize conda
-# conda init bash
-
-# # Activate the conda environment
-# source activate py_3.9
-
-# echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-# echo -e "${On_Gre} 6. Installing Python Requirements${RCol}"
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-# # Install Python dependencies
-# pip install wheel==0.43.0 setuptools==69.5.1 pybind11==2.11.1
-
-# echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-# echo -e "${On_Gre} 7. Creating Wheel File${RCol}"
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-
-# # Build the Python wheel
-# python setup.py bdist_wheel
-
-# echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-# echo -e "${On_Gre} 8. Installing Wheel File.${RCol}"
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-
-# # Install the built wheel
-# pip install dist/*.whl --no-deps
-
-# Update the library path
-# echo -e "$\n{Gre} -----------------------------------------------------------------${RCol}"
-# echo -e "${On_Gre} 9. Updating Library Path"
-# echo -e "${On_Gre} - Note: "
-# echo -e "${On_Gre}    - Conda Prefix: $CONDA_PREFIX${RCol}"
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}"
-
-
-#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
-
-# #Summary of parameters
-# echo -e "$\n{Gre} -----------------------------------------------------------------${RCol}"
-# echo -e "${On_Gre} 8. Parameter Summary"
-# echo -e "${On_Gre} - Note: "
-# echo -e "${On_Gre}    - Conda Prefix: $CONDA_PREFIX${RCol}"
-# echo -e "${On_Gre}    - Architecture: $PYTORCH_ROCM_ARCH"
-# echo -e "${On_Gre}    - HSA_OVERRIDE_GFX_VERSION: $HSA_OVERRIDE_GFX_VERSION ${RCol}"
-# echo -e "${On_Gre}    - DCMAKE_HIP_ARCHITECTURES: $PYTORCH_ROCM_ARCH ${RCol}"
-# echo -e "${Gre} -----------------------------------------------------------------${RCol}"
-
-
-echo -e "\n${Gre} -----------------------------------------------------------------${RCol}"
-echo -e "${On_Gre} FINAL. Installing Wheel File.${RCol}"
-echo -e "${Gre} -----------------------------------------------------------------${RCol}\n"
-
-# Install the built wheel
-pip install /src/*.whl
+echo "==> Build complete"
