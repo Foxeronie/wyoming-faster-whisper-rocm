@@ -75,7 +75,7 @@ FROM ubuntu:${UBUNTU_VERSION}
 
 ARG ROCM_VERSION
 
-LABEL org.opencontainers.image.source="https://github.com/Donkey545/wyoming-faster-whisper-rocm"
+LABEL org.opencontainers.image.source="https://github.com/Foxeronie/wyoming-faster-whisper-rocm"
 
 ENV ROCM_PATH=/opt/rocm \
     PATH=/opt/venv/bin:${PATH} \

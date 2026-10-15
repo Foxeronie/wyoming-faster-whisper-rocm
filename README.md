@@ -3,6 +3,8 @@
 ## Quick Description
 Faster Whisper running on AMD GPUs with the ROCm build of CTranslate2, served up with the Wyoming protocol
 
+This is a fork of [pigeek/wyoming-faster-whisper-rocm](https://github.com/pigeek/wyoming-faster-whisper-rocm), which is based on [Donkey545/wyoming-faster-whisper-rocm](https://github.com/Donkey545/wyoming-faster-whisper-rocm). See [Changes in this fork](#changes-in-this-fork) for what is different.
+
 
 ## System Overview
 
@@ -41,7 +43,7 @@ This project ties together a few projects to make Faster Whisper work with an AM
 1. Clone this repository and open the directory
 
 ```bash
-git clone https://github.com/Donkey545/wyoming-faster-whisper-rocm.git
+git clone https://github.com/Foxeronie/wyoming-faster-whisper-rocm.git
 cd wyoming-faster-whisper-rocm/
 ```
 
@@ -82,9 +84,39 @@ At this point you can configure the Whisper service with Wyoming in home assista
   - `WYOMING_DEBUG` (set to `1` to enable debug logging)
   - `HSA_OVERRIDE_GFX_VERSION` (for GPUs/APUs not officially supported by ROCm, e.g. `9.0.0` for `gfx90c`)
 
+### Running as a non-root user
+If you set `user:` in your compose file, the container needs access to the GPU device nodes and a writable cache location:
+- Add the host's group IDs of `/dev/kfd` and `/dev/dri/renderD*` via `group_add` (check them with `ls -ln /dev/kfd /dev/dri`). Group names like `video` are resolved inside the container and may not match the host.
+- Point the caches to the data volume, e.g. `HOME=/data`, `HF_HOME=/data/hf` and `XDG_CACHE_HOME=/data/cache`.
+
 ### Debugging
 You can shell into the container if you need to experiment:
 ```bash
 docker compose exec whisper bash
 ```
 From there you can run `python -m wyoming_whisper --help` to view live CLI options.
+
+
+## Changes in this fork
+
+Compared to [pigeek/wyoming-faster-whisper-rocm](https://github.com/pigeek/wyoming-faster-whisper-rocm):
+
+### CTranslate2 and Docker image
+- **Official CTranslate2 instead of a fork:** CTranslate2 supports ROCm upstream since 4.7. By default the image now installs the official ROCm wheel of CTranslate2 4.8.3 (download is verified by SHA-256) instead of compiling the [pigeek/CTranslate2-rocm](https://github.com/pigeek/CTranslate2-rocm) fork. Nothing is compiled for supported GPUs.
+- **Optional source build:** `CTRANSLATE2_SOURCE=source` builds upstream CTranslate2 for `AMDGPU_TARGETS` on top of `rocm/dev-ubuntu-24.04`, for GPUs the official wheel does not cover (e.g. `gfx90c`). `build.sh` was rewritten for this and produces a self-contained wheel.
+- **Much smaller image:** The runtime image is now `ubuntu:24.04` with only the ROCm 7.2.4 libraries CTranslate2 links against, instead of the full `rocm/pytorch` image (about 68 GB). PyTorch is not needed by faster-whisper.
+- **Build cache:** Application code is copied last, so code changes no longer invalidate the expensive layers.
+- **Pinned dependencies:** `faster-whisper==1.2.1` and `wyoming==1.10.2` are pinned; the outdated `tokenizers<0.21` cap and the bundled `ctranslate2-4.1.0-cp39` wheel were removed. Python packages live in a virtualenv (`/opt/venv`).
+
+### Wyoming server
+- **Model lock fixed:** faster-whisper generates segments lazily, so decoding used to run after the model lock was released. The transcription is now fully consumed inside the lock and runs in a worker thread, keeping the event loop responsive.
+- **Robustness:** An `audio-stop` without preceding audio returns an empty transcript instead of crashing the handler; transcripts no longer contain double spaces.
+- **Language codes:** Codes like `de-DE` or `pt_BR` (from Home Assistant or `WYOMING_LANGUAGE`) are mapped to what Whisper understands (`de`, `pt`). Unsupported languages fall back to auto-detection instead of failing the transcription.
+- **Reported languages:** Home Assistant is told the languages of the loaded model (only `en` for `.en` models) instead of a fixed list.
+- Updated attribution to [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper), removed unused code.
+
+### Configuration and tooling
+- `run.sh`: removed the legacy conda activation and the no-op HSA override, added `WYOMING_DEBUG`.
+- `docker-compose.yml`: build arguments `CTRANSLATE2_SOURCE`/`AMDGPU_TARGETS`, defaults to `large-v3-turbo` with `float16`, documents useful environment variables.
+- pre-commit: replaced the broken poetry-based black/ruff hooks with [ruff-pre-commit](https://github.com/astral-sh/ruff-pre-commit) and updated `pre-commit-hooks`.
+- README: updated requirements, instructions and environment variables.
