@@ -90,9 +90,15 @@ class FasterWhisperEventHandler(AsyncEventHandler):
                 self._wav_file.close()
                 self._wav_file = None
 
-                async with self.model_lock:
-                    # Run in a thread so the event loop stays responsive
-                    text = await asyncio.to_thread(self._transcribe)
+                try:
+                    async with self.model_lock:
+                        # Run in a thread so the event loop stays responsive
+                        text = await asyncio.to_thread(self._transcribe)
+                except Exception:
+                    # Always answer, otherwise the client waits until it
+                    # times out
+                    _LOGGER.exception("Transcription failed")
+                    text = ""
 
             _LOGGER.info(text)
 
