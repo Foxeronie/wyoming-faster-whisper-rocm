@@ -10,7 +10,7 @@ from wyoming.info import AsrModel, AsrProgram, Attribution, Info
 from wyoming.server import AsyncServer
 
 from . import __version__
-from .handler import FasterWhisperEventHandler
+from .handler import FasterWhisperEventHandler, normalize_language
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,9 +87,16 @@ async def main() -> None:
         model_name = f"{model_size}-int8"
         args.model = f"rhasspy/faster-whisper-{model_name}"
 
-    if args.language == "auto":
-        # Whisper does not understand "auto"
-        args.language = None
+    # Load model
+    _LOGGER.debug("Loading %s", args.model)
+    whisper_model = faster_whisper.WhisperModel(
+        args.model,
+        download_root=args.download_dir,
+        device=args.device,
+        compute_type=args.compute_type,
+    )
+
+    args.language = normalize_language(args.language, whisper_model.supported_languages)
 
     wyoming_info = Info(
         asr=[
@@ -97,8 +104,8 @@ async def main() -> None:
                 name="faster-whisper",
                 description="Faster Whisper transcription with CTranslate2",
                 attribution=Attribution(
-                    name="Guillaume Klein",
-                    url="https://github.com/guillaumekln/faster-whisper/",
+                    name="SYSTRAN",
+                    url="https://github.com/SYSTRAN/faster-whisper",
                 ),
                 installed=True,
                 version=__version__,
@@ -111,21 +118,12 @@ async def main() -> None:
                             url="https://huggingface.co/Systran",
                         ),
                         installed=True,
-                        languages=faster_whisper.tokenizer._LANGUAGE_CODES,  # pylint: disable=protected-access
+                        languages=whisper_model.supported_languages,
                         version=faster_whisper.__version__,
                     )
                 ],
             )
         ],
-    )
-
-    # Load model
-    _LOGGER.debug("Loading %s", args.model)
-    whisper_model = faster_whisper.WhisperModel(
-        args.model,
-        download_root=args.download_dir,
-        device=args.device,
-        compute_type=args.compute_type,
     )
 
     server = AsyncServer.from_uri(args.uri)

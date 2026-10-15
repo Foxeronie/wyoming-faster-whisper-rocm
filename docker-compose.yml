@@ -5,6 +5,10 @@ services:
     build:
       context: .
       args:
+        # "wheel" (default) uses the official CTranslate2 ROCm wheel for
+        # gfx1030, gfx1100-gfx1102, gfx1150/gfx1151 and gfx1200/gfx1201.
+        # "source" builds CTranslate2 for AMDGPU_TARGETS instead (e.g. gfx90c).
+        CTRANSLATE2_SOURCE: ${CTRANSLATE2_SOURCE:-wheel}
         AMDGPU_TARGETS: ${AMDGPU_TARGETS:-}
     image: wyoming-faster-whisper-rocm
     volumes:
@@ -16,12 +20,13 @@ services:
       - "/dev/kfd"
     environment:
       WYOMING_DATA_DIRS: /data
-      WYOMING_MODEL: medium
-      WYOMING_COMPUTE_TYPE: int8
+      # Smaller GPUs/APUs: e.g. "medium" with "int8"
+      WYOMING_MODEL: large-v3-turbo
+      WYOMING_COMPUTE_TYPE: float16
       # Language code (e.g. "de") or "auto"
       # WYOMING_LANGUAGE: auto
       # Set to "1" for verbose logging
       # WYOMING_DEBUG: "0"
       # Needed for GPUs/APUs not officially supported by ROCm,
-      # e.g. "9.0.0" for gfx90c APUs or "10.3.0" for RDNA2 cards
+      # e.g. "9.0.0" for gfx90c APUs (requires CTRANSLATE2_SOURCE=source)
       # HSA_OVERRIDE_GFX_VERSION: "9.0.0"

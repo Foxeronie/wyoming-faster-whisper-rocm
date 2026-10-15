@@ -1,11 +1,12 @@
 """Event handler for clients of the server."""
+
 import argparse
 import asyncio
 import logging
 import os
 import tempfile
 import wave
-from typing import Optional
+from typing import Iterable, Optional
 
 import faster_whisper
 from wyoming.asr import Transcribe, Transcript
@@ -15,6 +16,28 @@ from wyoming.info import Describe, Info
 from wyoming.server import AsyncEventHandler
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def normalize_language(
+    language: Optional[str], supported_languages: Iterable[str]
+) -> Optional[str]:
+    """Map a language code like "de-DE" to a code the model understands.
+
+    Returns None (auto-detect) for "auto" and for unsupported languages, since
+    faster-whisper fails the whole transcription on an unknown code.
+    """
+    if not language or language == "auto":
+        return None
+
+    code = language.replace("_", "-").split("-")[0].lower()
+    if code not in supported_languages:
+        _LOGGER.warning(
+            "Language %s is not supported by the model, using auto-detection",
+            language,
+        )
+        return None
+
+    return code
 
 
 class FasterWhisperEventHandler(AsyncEventHandler):
@@ -84,8 +107,10 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         if Transcribe.is_type(event.type):
             transcribe = Transcribe.from_event(event)
             if transcribe.language:
-                self._language = transcribe.language
-                _LOGGER.debug("Language set to %s", transcribe.language)
+                self._language = normalize_language(
+                    transcribe.language, self.model.supported_languages
+                )
+                _LOGGER.debug("Language set to %s", self._language)
             return True
 
         if Describe.is_type(event.type):

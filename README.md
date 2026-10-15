@@ -1,17 +1,17 @@
 # Wyoming Faster Whisper ROCm
 
 ## Quick Description
-Faster whisper Running on AMD GPUs with modified CTranslate 2 Libraries served up with Wyoming protocol
+Faster Whisper running on AMD GPUs with the ROCm build of CTranslate2, served up with the Wyoming protocol
 
 
 ## System Overview
 
-This project ties together a few projects to make Faster Whisper work with an AMD GPU. This has only been built for an AMD APU (5650G) at this time.
+This project ties together a few projects to make Faster Whisper work with an AMD GPU. It was originally built for an AMD APU (5650G).
 
 ### Host System & Hardware Requirements
 - AMD GPU or APU with an architecture `gfx900` or newer
 	- Check your architecture [here](https://llvm.org/docs/AMDGPUUsage.html) if you don't know
-- At least 100 GB of free disk space.
+- About 20 GB of free disk space (the source build needs more temporarily).
 - [ROCm Installed ](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/index.html)
 - [Docker Installed](https://docs.docker.com/desktop/install/linux-install/)
 - [Docker Compose Plugin Installed](https://docs.docker.com/compose/install/linux/)
@@ -29,13 +29,11 @@ This project ties together a few projects to make Faster Whisper work with an AM
 
 - [Wyoming](https://pypi.org/project/wyoming/)
 - [Faster Whisper](https://pypi.org/project/faster-whisper/)
-- [ROCm/Pytorch](https://hub.docker.com/r/rocm/pytorch)
-	- The image is based on `rocm7.0_ubuntu24.04_py3.12`.
-- [CTranslate2-rocm](https://github.com/pigeek/CTranslate2-rocm)
-	- This project is essential to running Faster Whisper as the standard CTranslate2 Library does not support ROCm natively. 
-	- This project needs to be built to the GPU architecture specific to your hardware.
-
-**Note:** The docker image required for this project is massive. On my system it is showing as about 68 GB.
+- [CTranslate2](https://github.com/OpenNMT/CTranslate2)
+	- Supports AMD GPUs via ROCm/HIP since version 4.7. The official ROCm wheels cover `gfx1030`, `gfx1100`-`gfx1102`, `gfx1150`/`gfx1151` and `gfx1200`/`gfx1201`.
+	- For other architectures (e.g. `gfx90c` APUs) the image can build CTranslate2 from source for your GPU.
+- [ROCm](https://rocm.docs.amd.com/) 7.2
+	- The runtime image is based on `ubuntu:24.04` and only contains the ROCm libraries CTranslate2 needs (no PyTorch).
 
 
 ## Instructions:
@@ -47,12 +45,21 @@ git clone https://github.com/Donkey545/wyoming-faster-whisper-rocm.git
 cd wyoming-faster-whisper-rocm/
 ```
 
-2. Optional: export the GPU architecture you want CTranslate2 to target. The image already builds support for several common targets (`gfx900`, `gfx902`, `gfx906`, `gfx908`, `gfx90a`, `gfx1010`, `gfx1030`, `gfx1100`, `gfx1101`, `gfx1102`, `gfx1151`), but setting this keeps build times down and ensures your exact arch is present.
+2. Find your GPU architecture:
 
 ```bash
-rocminfo | grep " gfx"   # find your architecture, e.g., gfx90c
-export AMDGPU_TARGETS=gfx90c
+rocminfo | grep " gfx"   # e.g. gfx1100 for an RX 7900 XTX
 ```
+
+   - Covered by the official wheel (`gfx1030`, `gfx1100`-`gfx1102`, `gfx1150`/`gfx1151`, `gfx1200`/`gfx1201`): nothing to do.
+   - Anything else (e.g. `gfx90c`): build CTranslate2 from source for your architecture. This takes a while.
+
+```bash
+export CTRANSLATE2_SOURCE=source
+export AMDGPU_TARGETS=gfx900   # gfx90c runs the gfx900 code with HSA_OVERRIDE_GFX_VERSION=9.0.0
+```
+
+   Also check `WYOMING_MODEL`/`WYOMING_COMPUTE_TYPE` in `docker-compose.yml`. The default `large-v3-turbo` with `float16` needs a few GB of VRAM; on small GPUs/APUs use e.g. `medium` with `int8`.
 
 3. Run Docker Compose
 ``` bash
@@ -62,19 +69,21 @@ At this point you can configure the Whisper service with Wyoming in home assista
 
 ### Useful Environment Variables
 
-- During build you can set `AMDGPU_TARGETS` (for example `export AMDGPU_TARGETS=gfx1100` before running compose) so CTranslate2 compiles specifically for your GPU.
+- During build:
+  - `CTRANSLATE2_SOURCE` (`wheel` (default) or `source`)
+  - `AMDGPU_TARGETS` (only for `source`, semicolon separated, e.g. `gfx900;gfx1010`)
 - At runtime the container entrypoint reads several optional variables:
   - `WYOMING_MODEL` (default `distil-small.en`)
   - `WYOMING_DEVICE` (default `cuda`)
   - `WYOMING_COMPUTE_TYPE` (default `default`)
   - `WYOMING_DATA_DIRS` (colon separated list, default `/data`)
   - `WYOMING_DOWNLOAD_DIR` (defaults to the first data dir)
-  - `WYOMING_LANGUAGE`, `WYOMING_BEAM_SIZE`, `WYOMING_INITIAL_PROMPT`, `WYOMING_EXTRA_ARGS`
+  - `WYOMING_LANGUAGE` (e.g. `de`, `de-DE` or `auto`), `WYOMING_BEAM_SIZE`, `WYOMING_INITIAL_PROMPT`, `WYOMING_EXTRA_ARGS`
   - `WYOMING_DEBUG` (set to `1` to enable debug logging)
   - `HSA_OVERRIDE_GFX_VERSION` (for GPUs/APUs not officially supported by ROCm, e.g. `9.0.0` for `gfx90c`)
 
-### Optional Manual Build
-The container now builds CTranslate2 automatically. You can still shell into the container if you need to experiment:
+### Debugging
+You can shell into the container if you need to experiment:
 ```bash
 docker compose exec whisper bash
 ```

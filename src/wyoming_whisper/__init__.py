@@ -1,5 +1,5 @@
-
 """Wyoming server for rocm faster-whisper."""
+
 from pathlib import Path
 
 _DIR = Path(__file__).parent

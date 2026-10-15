@@ -1,53 +1,125 @@
-FROM rocm/pytorch:rocm7.0_ubuntu24.04_py3.12_pytorch_release_2.7.1
+# syntax=docker/dockerfile:1
 
-LABEL org.opencontainers.image.source="https://github.com/Donkey545/wyoming-faster-whisper-rocm"
+ARG UBUNTU_VERSION=24.04
+ARG ROCM_VERSION=7.2.4
+# Where the ROCm build of CTranslate2 comes from:
+#   wheel  - official ROCm wheel from the CTranslate2 release page. Supports
+#            gfx1030, gfx1100-gfx1102, gfx1150/gfx1151 and gfx1200/gfx1201.
+#   source - build CTranslate2 for AMDGPU_TARGETS, e.g. for older GPUs/APUs
+#            such as gfx900/gfx90c that the official wheel does not cover.
+ARG CTRANSLATE2_SOURCE=wheel
+ARG CTRANSLATE2_VERSION=4.8.3
 
-ARG CTRANSLATE2_REPO=https://github.com/pigeek/CTranslate2-rocm.git
-ARG CTRANSLATE2_REF=rocm
+# -----------------------------------------------------------------------------
+
+FROM ubuntu:${UBUNTU_VERSION} AS ctranslate2-wheel
+
+ARG CTRANSLATE2_VERSION
+# SHA-256 of rocm-python-wheels-Linux.zip. Must be updated together with
+# CTRANSLATE2_VERSION (or set to an empty string to skip the check).
+ARG CTRANSLATE2_WHEELS_SHA256=132eda022faed55e4d1a7093f15a9dd9d4bcdf26bd72471ec1c984bada9a3d3f
+# Must match the python3 of the runtime image (Ubuntu 24.04: 3.12)
+ARG PYTHON_TAG=cp312
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL -o /tmp/wheels.zip \
+    "https://github.com/OpenNMT/CTranslate2/releases/download/v${CTRANSLATE2_VERSION}/rocm-python-wheels-Linux.zip" \
+ && if [ -n "${CTRANSLATE2_WHEELS_SHA256}" ]; then \
+      echo "${CTRANSLATE2_WHEELS_SHA256}  /tmp/wheels.zip" | sha256sum -c -; \
+    fi \
+ && mkdir /wheels \
+ && unzip -j /tmp/wheels.zip "*/ctranslate2-*-${PYTHON_TAG}-${PYTHON_TAG}-*.whl" -d /wheels \
+ && rm /tmp/wheels.zip
+
+# -----------------------------------------------------------------------------
+
+FROM rocm/dev-ubuntu-${UBUNTU_VERSION}:${ROCM_VERSION}-complete AS ctranslate2-source
+
+ARG CTRANSLATE2_VERSION
+ARG CTRANSLATE2_REPO=https://github.com/OpenNMT/CTranslate2.git
 ARG AMDGPU_TARGETS
 
-ENV ROCM_PATH=/opt/rocm \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
-WORKDIR /src
-
-# Build dependencies for CTranslate2
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     git \
     cmake \
     ninja-build \
-    build-essential \
     python3-dev \
-    patchelf \
-    libomp-dev \
-    ffmpeg \
-    pkg-config \
- && rm -rf /var/lib/apt/lists/*
+    python3-venv \
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 -m venv /opt/build-venv
 
-# Only the build script is copied here so that changes to the application code
-# do not invalidate the (very slow) CTranslate2 build layer.
 COPY src/build.sh /src/build.sh
 
-# Clone the ROCm CTranslate2 fork with submodules, build and install it, then
-# remove the sources in the same layer so they do not end up in the image.
-RUN (git clone --branch "${CTRANSLATE2_REF}" --depth 1 --recurse-submodules "${CTRANSLATE2_REPO}" /opt/build/CTranslate2 \
-     || (rm -rf /opt/build/CTranslate2 \
-         && git clone --branch "${CTRANSLATE2_REF}" --depth 1 "${CTRANSLATE2_REPO}" /opt/build/CTranslate2 \
-         && git -C /opt/build/CTranslate2 submodule update --init --recursive)) \
+RUN git clone --branch "v${CTRANSLATE2_VERSION}" --depth 1 \
+    --recurse-submodules --shallow-submodules \
+    "${CTRANSLATE2_REPO}" /opt/build/CTranslate2 \
  && AMDGPU_TARGETS="${AMDGPU_TARGETS:-}" \
-    CTRANSLATE2_SRC_DIR=/opt/build/CTranslate2 \
-    CTRANSLATE2_BUILD_DIR=/opt/build/CTranslate2/build \
-    CTRANSLATE2_INSTALL_PREFIX=/usr/local \
-    PYTHON_BIN=python3 \
+    PYTHON_BIN=/opt/build-venv/bin/python \
     /src/build.sh \
  && rm -rf /opt/build
 
-# Runtime requirements. ctranslate2 is pinned to the version built above so pip
-# cannot replace the ROCm build with the CUDA wheel from PyPI.
-RUN CT2_VERSION="$(python3 -c 'import ctranslate2; print(ctranslate2.__version__)')" \
- && pip install "ctranslate2==${CT2_VERSION}" "wyoming~=1.6" "faster-whisper~=1.0" "tokenizers>=0.15,<0.21" \
+# -----------------------------------------------------------------------------
+
+FROM ctranslate2-${CTRANSLATE2_SOURCE} AS ctranslate2
+
+# -----------------------------------------------------------------------------
+
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG ROCM_VERSION
+
+LABEL org.opencontainers.image.source="https://github.com/Donkey545/wyoming-faster-whisper-rocm"
+
+ENV ROCM_PATH=/opt/rocm \
+    PATH=/opt/venv/bin:${PATH} \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Only the ROCm runtime libraries CTranslate2 links against (plus their
+# dependencies) instead of a full ROCm/PyTorch image. hiprand does not declare
+# its dependency on rocrand, and libdrm from the amdgpu repo is installed
+# outside the default library path, so both are handled explicitly.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+    python3 \
+    python3-venv \
+ && . /etc/os-release \
+ && mkdir -p /etc/apt/keyrings \
+ && curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor -o /etc/apt/keyrings/rocm.gpg \
+ && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} ${VERSION_CODENAME} main" \
+    > /etc/apt/sources.list.d/rocm.list \
+ && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/graphics/${ROCM_VERSION}/ubuntu ${VERSION_CODENAME} main" \
+    > /etc/apt/sources.list.d/amdgpu.list \
+ && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' > /etc/apt/preferences.d/rocm-pin-600 \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    hipblas \
+    hiprand \
+    rocrand \
+ && apt-get purge -y --auto-remove curl gnupg \
+ && rm -rf /var/lib/apt/lists/* \
+ && printf '/opt/rocm/lib\n/opt/amdgpu/lib/x86_64-linux-gnu\n' > /etc/ld.so.conf.d/rocm.conf \
+ && ldconfig
+
+# Runtime requirements. The ROCm build of ctranslate2 is installed from the
+# local wheel in the same step, so pip cannot pull the CUDA wheel from PyPI.
+RUN --mount=type=bind,from=ctranslate2,source=/wheels,target=/tmp/wheels \
+    python3 -m venv /opt/venv \
+ && pip install \
+    /tmp/wheels/ctranslate2-*.whl \
+    "faster-whisper==1.2.1" \
+    "wyoming==1.10.2" \
  && python3 -c 'import ctranslate2; print("ctranslate2", ctranslate2.__version__, "from", ctranslate2.__file__)'
 
 # Application code
