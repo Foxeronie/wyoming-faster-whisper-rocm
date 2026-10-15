@@ -108,7 +108,7 @@ Compared to [pigeek/wyoming-faster-whisper-rocm](https://github.com/pigeek/wyomi
 - **Much smaller image:** The runtime image is now `ubuntu:24.04` with only the ROCm 7.2.4 libraries CTranslate2 links against, instead of the full `rocm/pytorch` image (about 68 GB). PyTorch is not needed by faster-whisper.
 - **Build cache:** Application code is copied last, so code changes no longer invalidate the expensive layers.
 - **GPU allocator:** CTranslate2 uses `hipMallocAsync` on ROCm by default, which fails model loading with "out of memory" even with free VRAM. The image sets `CT2_CUDA_ALLOCATOR=cub_caching`.
-- **Pinned dependencies:** `faster-whisper==1.2.1` and `wyoming==1.10.2` are pinned; the outdated `tokenizers<0.21` cap and the bundled `ctranslate2-4.1.0-cp39` wheel were removed. Python packages live in a virtualenv (`/opt/venv`).
+- **Pinned dependencies:** `faster-whisper==1.2.1`, `wyoming==1.10.2` and `av==18.1.0` are pinned (PyAV 19 removed an argument faster-whisper 1.2.1 still uses); the outdated `tokenizers<0.21` cap and the bundled `ctranslate2-4.1.0-cp39` wheel were removed. Python packages live in a virtualenv (`/opt/venv`).
 
 ### Wyoming server
 - **Model lock fixed:** faster-whisper generates segments lazily, so decoding used to run after the model lock was released. The transcription is now fully consumed inside the lock and runs in a worker thread, keeping the event loop responsive.

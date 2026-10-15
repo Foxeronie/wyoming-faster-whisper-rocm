@@ -118,11 +118,14 @@ RUN apt-get update \
 
 # Runtime requirements. The ROCm build of ctranslate2 is installed from the
 # local wheel in the same step, so pip cannot pull the CUDA wheel from PyPI.
+# av is capped because PyAV 19 removed the metadata_errors argument that
+# faster-whisper 1.2.1 passes to av.open().
 RUN --mount=type=bind,from=ctranslate2,source=/wheels,target=/tmp/wheels \
     python3 -m venv /opt/venv \
  && pip install \
     /tmp/wheels/ctranslate2-*.whl \
     "faster-whisper==1.2.1" \
+    "av==18.1.0" \
     "wyoming==1.10.2" \
  && python3 -c 'import ctranslate2; print("ctranslate2", ctranslate2.__version__, "from", ctranslate2.__file__)'
 
