@@ -112,7 +112,7 @@ Compared to [pigeek/wyoming-faster-whisper-rocm](https://github.com/pigeek/wyomi
 
 ### Wyoming server
 - **Model lock fixed:** faster-whisper generates segments lazily, so decoding used to run after the model lock was released. The transcription is now fully consumed inside the lock and runs in a worker thread, keeping the event loop responsive.
-- **Robustness:** An `audio-stop` without preceding audio returns an empty transcript instead of crashing the handler; transcripts no longer contain double spaces.
+- **Robustness:** An `audio-stop` without preceding audio returns an empty transcript instead of crashing the handler; errors during transcription are logged and answered with an empty transcript, so the client does not wait for a timeout; transcripts no longer contain double spaces.
 - **Language codes:** Codes like `de-DE` or `pt_BR` (from Home Assistant or `WYOMING_LANGUAGE`) are mapped to what Whisper understands (`de`, `pt`). Unsupported languages fall back to auto-detection instead of failing the transcription.
 - **Reported languages:** Home Assistant is told the languages of the loaded model (only `en` for `.en` models) instead of a fixed list.
 - Updated attribution to [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper), removed unused code.
