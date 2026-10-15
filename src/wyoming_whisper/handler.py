@@ -60,20 +60,17 @@ class FasterWhisperEventHandler(AsyncEventHandler):
                 "Audio stopped. Transcribing with initial prompt=%s",
                 self.initial_prompt,
             )
-            assert self._wav_file is not None
+            if self._wav_file is None:
+                _LOGGER.warning("Received audio-stop without any audio")
+                text = ""
+            else:
+                self._wav_file.close()
+                self._wav_file = None
 
-            self._wav_file.close()
-            self._wav_file = None
+                async with self.model_lock:
+                    # Run in a thread so the event loop stays responsive
+                    text = await asyncio.to_thread(self._transcribe)
 
-            async with self.model_lock:
-                segments, _info = self.model.transcribe(
-                    self._wav_path,
-                    beam_size=self.cli_args.beam_size,
-                    language=self._language,
-                    initial_prompt=self.initial_prompt,
-                )
-
-            text = " ".join(segment.text for segment in segments)
             _LOGGER.info(text)
 
             await self.write_event(Transcript(text=text).event())
@@ -97,3 +94,15 @@ class FasterWhisperEventHandler(AsyncEventHandler):
             return True
 
         return True
+
+    def _transcribe(self) -> str:
+        segments, _info = self.model.transcribe(
+            self._wav_path,
+            beam_size=self.cli_args.beam_size,
+            language=self._language,
+            initial_prompt=self.initial_prompt,
+        )
+
+        # Segments are generated lazily, so decoding happens while joining.
+        # Segment texts already carry a leading space.
+        return "".join(segment.text for segment in segments).strip()

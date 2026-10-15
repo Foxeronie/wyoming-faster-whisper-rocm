@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${CTRANSLATE2_SRC_DIR:-/opt/build/CTranslate2}"
 BUILD_DIR="${CTRANSLATE2_BUILD_DIR:-${SRC_DIR}/build}"
 INSTALL_PREFIX="${CTRANSLATE2_INSTALL_PREFIX:-/usr/local}"

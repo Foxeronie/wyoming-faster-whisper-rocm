@@ -18,3 +18,10 @@ services:
       WYOMING_DATA_DIRS: /data
       WYOMING_MODEL: medium
       WYOMING_COMPUTE_TYPE: int8
+      # Language code (e.g. "de") or "auto"
+      # WYOMING_LANGUAGE: auto
+      # Set to "1" for verbose logging
+      # WYOMING_DEBUG: "0"
+      # Needed for GPUs/APUs not officially supported by ROCm,
+      # e.g. "9.0.0" for gfx90c APUs or "10.3.0" for RDNA2 cards
+      # HSA_OVERRIDE_GFX_VERSION: "9.0.0"

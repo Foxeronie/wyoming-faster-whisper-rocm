@@ -1,22 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Activate the legacy conda environment when available to keep local workflows working.
-if command -v conda >/dev/null 2>&1; then
-  # shellcheck disable=SC1091
-  eval "$(command conda 'shell.bash' hook)"
-  conda activate py_3.9
-  if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${CONDA_PREFIX}/lib/"
-  else
-    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib/"
-  fi
-fi
-
-if [ -n "${HSA_OVERRIDE_GFX_VERSION:-}" ]; then
-  export HSA_OVERRIDE_GFX_VERSION
-fi
-
 MODEL="${WYOMING_MODEL:-distil-small.en}"
 URI="${WYOMING_URI:-tcp://0.0.0.0:10300}"
 DEVICE="${WYOMING_DEVICE:-cuda}"
@@ -56,6 +40,10 @@ fi
 if [ -n "${INITIAL_PROMPT}" ]; then
   ARGS+=("--initial-prompt" "${INITIAL_PROMPT}")
 fi
+
+case "${WYOMING_DEBUG:-}" in
+  1 | true | yes) ARGS+=("--debug") ;;
+esac
 
 if [ -n "${EXTRA_ARGS}" ]; then
   # shellcheck disable=SC2206

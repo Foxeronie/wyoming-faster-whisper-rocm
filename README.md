@@ -10,8 +10,8 @@ This project ties together a few projects to make Faster Whisper work with an AM
 
 ### Host System & Hardware Requirements
 - AMD GPU or APU with an architecture `gfx900` or newer
-	- - Check you architecture [here](https://llvm.org/docs/AMDGPUUsage.html) if you don't know
-- At least 100gb of disk space.
+	- Check your architecture [here](https://llvm.org/docs/AMDGPUUsage.html) if you don't know
+- At least 100 GB of free disk space.
 - [ROCm Installed ](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/index.html)
 - [Docker Installed](https://docs.docker.com/desktop/install/linux-install/)
 - [Docker Compose Plugin Installed](https://docs.docker.com/compose/install/linux/)
@@ -30,12 +30,12 @@ This project ties together a few projects to make Faster Whisper work with an AM
 - [Wyoming](https://pypi.org/project/wyoming/)
 - [Faster Whisper](https://pypi.org/project/faster-whisper/)
 - [ROCm/Pytorch](https://hub.docker.com/r/rocm/pytorch)
-	- Build Requires Python 3.9, the project makes use of the 20.04 image.
+	- The image is based on `rocm7.0_ubuntu24.04_py3.12`.
 - [CTranslate2-rocm](https://github.com/pigeek/CTranslate2-rocm)
 	- This project is essential to running Faster Whisper as the standard CTranslate2 Library does not support ROCm natively. 
 	- This project needs to be built to the GPU architecture specific to your hardware.
 
-**Note:** The docker image required for this project is massive. On my system it is showing as 68g.4b.
+**Note:** The docker image required for this project is massive. On my system it is showing as about 68 GB.
 
 
 ## Instructions:
@@ -70,6 +70,8 @@ At this point you can configure the Whisper service with Wyoming in home assista
   - `WYOMING_DATA_DIRS` (colon separated list, default `/data`)
   - `WYOMING_DOWNLOAD_DIR` (defaults to the first data dir)
   - `WYOMING_LANGUAGE`, `WYOMING_BEAM_SIZE`, `WYOMING_INITIAL_PROMPT`, `WYOMING_EXTRA_ARGS`
+  - `WYOMING_DEBUG` (set to `1` to enable debug logging)
+  - `HSA_OVERRIDE_GFX_VERSION` (for GPUs/APUs not officially supported by ROCm, e.g. `9.0.0` for `gfx90c`)
 
 ### Optional Manual Build
 The container now builds CTranslate2 automatically. You can still shell into the container if you need to experiment:
