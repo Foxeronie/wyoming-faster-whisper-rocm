@@ -82,6 +82,7 @@ At this point you can configure the Whisper service with Wyoming in home assista
   - `WYOMING_DOWNLOAD_DIR` (defaults to the first data dir)
   - `WYOMING_LANGUAGE` (e.g. `de`, `de-DE` or `auto`), `WYOMING_BEAM_SIZE`, `WYOMING_INITIAL_PROMPT`, `WYOMING_EXTRA_ARGS`
   - `WYOMING_DEBUG` (set to `1` to enable debug logging)
+  - `CT2_CUDA_ALLOCATOR` (default `cub_caching`, see [Changes in this fork](#changes-in-this-fork))
   - `HSA_OVERRIDE_GFX_VERSION` (for GPUs/APUs not officially supported by ROCm, e.g. `9.0.0` for `gfx90c`)
 
 ### Running as a non-root user
@@ -106,6 +107,7 @@ Compared to [pigeek/wyoming-faster-whisper-rocm](https://github.com/pigeek/wyomi
 - **Optional source build:** `CTRANSLATE2_SOURCE=source` builds upstream CTranslate2 for `AMDGPU_TARGETS` on top of `rocm/dev-ubuntu-24.04`, for GPUs the official wheel does not cover (e.g. `gfx90c`). `build.sh` was rewritten for this and produces a self-contained wheel.
 - **Much smaller image:** The runtime image is now `ubuntu:24.04` with only the ROCm 7.2.4 libraries CTranslate2 links against, instead of the full `rocm/pytorch` image (about 68 GB). PyTorch is not needed by faster-whisper.
 - **Build cache:** Application code is copied last, so code changes no longer invalidate the expensive layers.
+- **GPU allocator:** CTranslate2 uses `hipMallocAsync` on ROCm by default, which fails model loading with "out of memory" even with free VRAM. The image sets `CT2_CUDA_ALLOCATOR=cub_caching`.
 - **Pinned dependencies:** `faster-whisper==1.2.1` and `wyoming==1.10.2` are pinned; the outdated `tokenizers<0.21` cap and the bundled `ctranslate2-4.1.0-cp39` wheel were removed. Python packages live in a virtualenv (`/opt/venv`).
 
 ### Wyoming server

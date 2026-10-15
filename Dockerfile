@@ -77,7 +77,11 @@ ARG ROCM_VERSION
 
 LABEL org.opencontainers.image.source="https://github.com/Foxeronie/wyoming-faster-whisper-rocm"
 
+# CTranslate2 defaults to the async allocator (hipMallocAsync) on ROCm, which
+# fails model loading with "out of memory" even with free VRAM (seen on an
+# RX 7900 XTX with ROCm 7.2.4). The caching allocator works.
 ENV ROCM_PATH=/opt/rocm \
+    CT2_CUDA_ALLOCATOR=cub_caching \
     PATH=/opt/venv/bin:${PATH} \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
